@@ -2,10 +2,10 @@ package tcppool
 
 import (
 	"errors"
-	"io"
+	//"io"
+	"fmt"
 	"net"
 	"sync"
-	"time"
 )
 
 var (
@@ -26,22 +26,24 @@ type Pool struct {
 	currentSize uint
 	conns       chan net.Conn
 	factory     func() (net.Conn, error)
+	heartbeat   func(conn net.Conn) error
 }
 
 // NewPool create pool .
 // Factory is used to create connection
 // min connection
 // max connection allowed
-func NewPool(min, max uint, factory func() (net.Conn, error)) (*Pool, error) {
+func NewPool(min, max uint, factory func() (net.Conn, error), heartbeat func(conn net.Conn) error) (*Pool, error) {
 	if err := validateConfig(min, max, factory); err != nil {
 		return nil, err
 	}
 
 	pool := &Pool{
-		min:     min,
-		max:     max,
-		factory: factory,
-		conns:   make(chan net.Conn, max),
+		min:       min,
+		max:       max,
+		factory:   factory,
+		conns:     make(chan net.Conn, max),
+		heartbeat: heartbeat,
 	}
 
 	if err := pool.initConn(); err != nil {
@@ -84,11 +86,20 @@ func (p *Pool) Get() (net.Conn, error) {
 	var err error
 	select {
 	case conn := <-p.conns:
-		if isConnClosed(conn) {
+		if err = p.heartbeat(conn); err != nil {
+			fmt.Println("detected connection closed")
 			conn, err = p.factory()
 			if err != nil {
 				return nil, err
 			}
+		}
+
+		if conn == nil {
+			conn, err = p.factory()
+			if err != nil {
+				return nil, err
+			}
+
 		}
 
 		return conn, nil
@@ -148,19 +159,7 @@ func (p *Pool) Destroy() {
 
 }
 
-func isConnClosed(conn net.Conn) bool {
-	conn.SetReadDeadline(time.Now())
-	var one []byte
-	if _, err := conn.Read(one); err == io.EOF {
-		conn.Close()
-		return true
-	}
-	var zero time.Time
-	conn.SetReadDeadline(zero)
-	return false
-}
-
 // Len is returning size of conns created
-func (p *Pool) Len() {
+func (p *Pool) Len() int {
 	return len(p.conns)
 }
