@@ -3,7 +3,7 @@ Simple implementation of tcp pool
 
 #### Installation 
 ```
-github.com/yogyrahmawan/tcppool
+go get github.com/yogyrahmawan/tcppool
 ```
 
 ### Usage 
